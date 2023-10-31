@@ -1,7 +1,8 @@
 from utils import (load_all_character_name_and_id,
                    get_current_time,
                    print_table_entries,
-                   parse_character_info
+                   parse_character_info,
+                   remove_null_values_from_jsonl
                    )
 from config import (MAX_TIME_OUT,
                     HEADERS,
@@ -16,6 +17,7 @@ import logging
 import json
 import httpx
 from tqdm.asyncio import tqdm
+import argparse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,19 +79,34 @@ async def fetch_and_save_character_info(crawler, character_id, semaphore):
             await save_to_jsonl(parsed_character_info)
 
 async def main():
-    BASE_URL = "https://vndb.org"  # Replace with the actual API endpoint
-    crawler = GalGameCharacterCrawler(BASE_URL, MAX_TIME_OUT)
-    character_name_and_id = load_all_character_name_and_id()
-    character_ids = list(character_name_and_id.values())
-    character_ids = ["c12333"]
-    # 定义协程数目
-    semaphore = asyncio.Semaphore(COROUTINE_LIMIT)
-    logger.info(f"Start to crawl {len(character_ids)} characters")
-    # tasks = []
-    async for character_id in tqdm(character_ids, total=len(character_ids)):
-        await fetch_and_save_character_info(crawler, character_id, semaphore)
-        await asyncio.sleep(REQUEST_INTERVAL)  # 请求间隔
+    parser = argparse.ArgumentParser(description='Crawl character info from vndb.org')
+    parser.add_argument('--base_url', type=str, default="https://vnstat.org", help='Base url of the website')
+    parser.add_argument('--coroutine_limit', type=int, default=COROUTINE_LIMIT, help='Number of coroutines')
+    parser.add_argument('--request_interval', type=float, default=REQUEST_INTERVAL, help='Request interval')
+    parser.add_argument('--max_time_out', type=int, default=MAX_TIME_OUT, help='Max time out')
+    parser.add_argument('--rate_limit_wait_time', type=int, default=RATE_LIMIT_WAIT_TIME, help='Rate limit wait time')
+    parser.add_argument('--exception_wait_time', type=int, default=EXCEPTION_WAIT_TIME, help='Exception wait time')
+    parser.add_argument('--output_file', type=str, default="output.jsonl", help='Output file name')
+    parser.add_argument('--drop_null_values', type=bool, default=True, help='Drop null values')
+    parser.add_argument('--run_crawler', type=bool, default=True, help='Whether to run the crawler')
+    args = parser.parse_args()
+    if args.run_crawler:
 
+        BASE_URL = args.base_url
+
+        crawler = GalGameCharacterCrawler(BASE_URL, MAX_TIME_OUT)
+        character_name_and_id = load_all_character_name_and_id()
+        character_ids = list(character_name_and_id.values())
+        # 定义协程数目
+        semaphore = asyncio.Semaphore(COROUTINE_LIMIT)
+        logger.info(f"Start to crawl {len(character_ids)} characters")
+        # tasks = []
+        async for character_id in tqdm(character_ids, total=len(character_ids)):
+            await fetch_and_save_character_info(crawler, character_id, semaphore)
+            await asyncio.sleep(REQUEST_INTERVAL)  # 请求间隔
+    if args.drop_null_values:
+        logger.info("Removing null values from jsonl file...")
+        await remove_null_values_from_jsonl(args.output_file, f"null_removed_{args.output_file}")
 
 if __name__ == "__main__":
     asyncio.run(main())
